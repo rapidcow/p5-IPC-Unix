@@ -33,6 +33,9 @@ IPC::Unix - POSIX bidi popen, re-written
 
 package IPC::Unix;
 
+our $VERSION = '0.0_001';
+$VERSION = eval $VERSION;
+
 use 5.006;
 use strict;
 use warnings;
@@ -119,7 +122,7 @@ sub unsetenv {
 sub dup {
 	my $self = $_[0];
 	my $pkg = caller;
-	for (my $o = 1; $o < @$_; ++$o) {
+	for (my $o = 1; $o < @_; ++$o) {
 		my ($fh0, $fh1, $mode);
 
 		if (ref $_[$o] eq 'GLOB') {
@@ -150,12 +153,12 @@ sub dup {
 			}
 		}
 
-		unless ($_[$o] =~ /(<|>|<&|>&|<&-|>&-)/gc) {
+		unless ($_[$o] =~ /(<&-?|>&-?|<|>)/gc) {
 			croak "dup: index $o: cannot find a valid file mode in: $_[$o]";
 		} else {
 			$mode = $1;
 			if ($mode eq '<&-' || $mode eq '>&-') {
-				push @{$self->{dup}}, [ $fd0, $mode ];
+				push @{$self->{dup}}, [ $fh0, $mode ];
 				next;
 			} elsif ($_[$o] =~ /\G\z/gc) {
 				++$o;
@@ -163,14 +166,16 @@ sub dup {
 			}
 		}
 
+		print STDERR "fh0=$fh0 mode=$mode\n";
+
 		# Handle < or >
 		if ($mode eq '<' || $mode eq '>') {
 			if ($mode eq '<') {
-				pipe $fh, $_[$o] or croak "dup: index $o: pipe `<': $!";
+				pipe $fh1, $_[$o] or croak "dup: index $o: pipe `<': $!";
 			} else {
-				pipe $_[$o], $fh or croak "dup: index $o: pipe `>': $!";
+				pipe $_[$o], $fh1 or croak "dup: index $o: pipe `>': $!";
 			}
-			push @{$self->{dup}}, [ $fd0, $mode, $fh ];
+			push @{$self->{dup}}, [ $fh0, $mode, $fh1 ];
 			push @{$self->{fds}}, $_[$o];
 			next;
 		}
@@ -191,11 +196,11 @@ sub dup {
 		}
 
 		if (defined $fh1) {
-			push @{$self->{dup}}, [ $fd0, $mode, $fd1 ];
+			push @{$self->{dup}}, [ $fh0, $mode, $fh1 ];
 			next;
 		} else {
 			# Weird way to write ">&-" or "<&-" :/
-			push @{$self->{clo}}, [ $fd0, "$mode-" ];
+			push @{$self->{clo}}, [ $fh0, "$mode-" ];
 		}
 	}
 	$self;

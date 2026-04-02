@@ -48,6 +48,6 @@ sub MY::postamble {
 	<<\MAKE
 
 xt : all
-	prove -b xt/*.t
+	prove -bv xt/*.t
 MAKE
 }
