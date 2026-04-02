@@ -63,10 +63,10 @@ our $TRACE;
 sub DEBUG
 {
 	local $" = " ";
-	my ($subr, $file, $line) = caller;
+	my (undef, $file, $line) = caller;
 	my $name = File::Spec->abs2rel($file, ".");
 	$name = $file if $name =~ m!^../!;
-	my $fmt = sprintf "%s:%s:%03d %s", $name, $subr, $line, "@_";
+	my $fmt = sprintf "%s:%03d %s", $name, $line, "@_";
 	chomp $fmt;  print STDERR "$fmt\n";
 }
 
