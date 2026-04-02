@@ -40,10 +40,21 @@ use 5.006;
 use strict;
 use warnings;
 
+use Config;
+use Fcntl qw( F_GETFD F_SETFD FD_CLOEXEC );
+use IO::Handle;   # for IO methods (pre-v5.14)
+
 use Carp qw(croak);
 use Symbol ();
 
+use Data::Dumper;
 use File::Basename;
+
+sub quote
+{
+	Data::Dumper->new(\@_)->Useqq(1)
+		->Indent(0)->Terse(1)->Dump();
+}
 
 sub new {
 	my $class = shift;
@@ -121,40 +132,42 @@ sub unsetenv {
 
 sub dup {
 	my $self = $_[0];
+	my $class = ref $self;
+	$class = defined $class ? $class . ": " : "";
 	my $pkg = caller;
 	for (my $o = 1; $o < @_; ++$o) {
 		my ($adv, $fh0, $fh1, $mode);
 
 		if (ref $_[$o] eq 'GLOB') {
 			$fh0 = $_[$o++];
-			$o < @_ or croak "dup: index $o: unexpected end after GLOB reference";
+			$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB reference";
 		} elsif (ref \$_[$o] eq 'GLOB') {
 			$fh0 = \$_[$o++];
-			$o < @_ or croak "dup: index $o: unexpected end after GLOB scalar";
+			$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB scalar";
 		} else {
 			pos($_[$o]) = 0;
 			if ($_[$o] =~ /\G([0-9]+)/gc) {
-				$1 > 2 and croak "dup: index $o: don't know how to map file descriptor: $1";
+				$1 > 2 and croak "${class}dup: index $o: don't know how to map file descriptor: $1";
 				$fh0 = \(*STDIN, *STDOUT, *STDERR)[$1];
 			} elsif ($_[$o] =~ /\G([^<>]+)/gc) {
 				$fh0 = Symbol::qualify_to_ref($1, $pkg);
 				++$o;
-				$o < @_ or croak "dup: index $o: unexpected end after file descriptor";
+				$o < @_ or croak "${class}dup: index $o: unexpected end after file descriptor";
 			} elsif ($_[$o] =~ /^>/)
 				{ $fh0 = \*STDOUT; }
 			elsif ($_[$o] =~ /^</)
 				{ $fh0 = \*STDIN; }
 			else {
-				croak "dup: index $o: expecting source file";
+				croak "${class}dup: index $o: expecting source file";
 			}
 			if ($_[$o] =~ /\G\z/gc) {
 				++$o;
-				$o < @_ or croak "dup: index $o: unexpected end after file descriptor";
+				$o < @_ or croak "${class}dup: index $o: unexpected end after file descriptor";
 			}
 		}
 
 		unless ($_[$o] =~ /([<>]&-?|\+?[<>])/gc) {
-			croak "dup: index $o: cannot find a valid file mode in: $_[$o]";
+			croak "${class}dup: index $o: cannot find a valid file mode in: $_[$o]";
 		} else {
 			$mode = $1;
 			if ($mode eq '<&-' || $mode eq '>&-') {
@@ -162,7 +175,7 @@ sub dup {
 				next;
 			} elsif ($_[$o] =~ /\G\z/gc) {
 				++$o;
-				$o < @_ or croak "dup: index $o: unexpected end after file mode";
+				$o < @_ or croak "${class}dup: index $o: unexpected end after file mode";
 				$adv = 1;
 			}
 		} # else "$adv = 0" here.
@@ -171,16 +184,18 @@ sub dup {
 		if ($mode =~ /\A\+?[<>]\z/) {
 			if (defined $_[$o]) {
 				my $filename = $adv ? $_[$o] : substr($_[$o], pos($_[$o]));
-				push @{$self->{fds}}, [ $fh0, $mode, $filename ];
+				push @{$self->{dup}}, [ $fh0, $mode, $filename ];
 			} else {
 				$mode =~ y/+//d;
 				if ($mode eq '<') {
-					pipe $fh1, $_[$o] or croak "dup: index $o: pipe `<': $!";
+					pipe $fh1, $_[$o] or croak "${class}dup: index $o: pipe `<': $!";
+					$_[$o]->autoflush();
 				} else {
-					pipe $_[$o], $fh1 or croak "dup: index $o: pipe `>': $!";
+					pipe $_[$o], $fh1 or croak "${class}dup: index $o: pipe `>': $!";
+					$fh1->autoflush();
 				}
 				push @{$self->{dup}}, [ $fh0, "$mode&", $fh1 ];
-				push @{$self->{fds}}, $_[$o];
+				push @{$self->{fhs}}, [ $fh1, $_[$o] ];
 			}
 			next;
 		}
@@ -191,12 +206,12 @@ sub dup {
 			$fh1 = \$_[$o];
 		} elsif (defined $_[$o]) {
 			if ($_[$o] =~ /\G([0-9]+)/gc) {
-				$1 > 2 and croak "dup: index $o: don't know how to map file descriptor: $1";
+				$1 > 2 and croak "${class}dup: index $o: don't know how to map file descriptor: $1";
 				$fh1 = \(*STDIN, *STDOUT, *STDERR)[$1];
 			} elsif ($_[$o] =~ /\G(.+)/gc) {
 				Symbol::qualify_to_ref($1, $_);
 			} else {
-				croak "dup: index $o: unexpected end while expecting destination file";
+				croak "${class}dup: index $o: unexpected end while expecting destination file";
 			}
 		}
 
@@ -212,10 +227,164 @@ sub dup {
 }
 
 sub spawn {
+	my $self = shift;
+	my $class = ref $self;
+	$class = defined $class ? "$class: " : "";
 
+	# error communication
+	pipe my ($stat_r, $stat_w);
 
+	my @dir = $self->{dir} ? @{$self->{dir}} : ();
+	my @dup = $self->{dup} ? @{$self->{dup}} : ();
+	my @fhs = $self->{fhs} ? @{$self->{fhs}} : ();
+
+	defined (my $kid = fork) or croak "${class}spawn: fork: $!";
+	if ($kid) {  # parent process
+		close $stat_w;
+		close $_->[1] foreach @fhs;
+
+		my $mesg = do { local $/; <$stat_r> };
+		if (defined $mesg && do { chomp $mesg; length $mesg }) {
+			croak "${class}spawn: $mesg";
+		}
+		close $stat_r;
+		$self->{pid} = $kid;
+		return $kid;
+	}
+
+	# child process (will NEVER return)
+	close $stat_r;
+	close $_->[0] foreach @fhs;
+
+	eval {
+		# Make $stat_w close on exec.  (It probably
+		# already has that flag, given that Perl sets
+		# FD_CLOEXEC automatically for fds above $^F.
+		# ... but it's good to be safe.)
+		my $flags = fcntl( $stat_w, F_GETFD, 0 )
+			or die "fcntl GETFD failed: $!\n";
+		fcntl( $stat_w, F_SETFD, $flags | FD_CLOEXEC )
+			or die "fcntl SETFD failed: $!\n";
+
+		foreach (@dir) {
+			unless (CORE::chdir $_) {
+				my $dirs = quote($_);
+				die "chdir $dirs: $!\n";
+			}
+		}
+
+		foreach my $op (@dup) {
+			# mode >&- or <&-: close
+			if (@$op == 2) {
+				close $op->[0];
+			} else {
+				my ($fh0, $mode, $fh1) = @$op;
+				unless (open $fh0, $mode, $fh1) {
+					my $fd0 = fileno($fh0);
+					my $fd1 = ref $fh1 ? fileno($fh1)
+						: quote($fh1);
+					die "open $fd0$mode$fd1: $!\n";
+				}
+			}
+		}
+
+		%ENV = %{$self->{env}} if $self->{env};
+		if ($self->{setenv}) {
+			while (my ($K, $V) = %{$self->{setenv}}) {
+				if (defined $V) {
+					$ENV{$K} = $V;
+				} else {
+					delete $ENV{$K};
+				}
+			}
+		}
+		exec { $self->{bin} } @{$self->{cmd}} or do {
+			my $bins = quote($self->{bin});
+			die "exec $bins: $!\n";
+		}
+	};
+
+	# Something went wrong
+	print $stat_w $@;
+	close $stat_w;
+
+	# DIE
+	eval { require POSIX; POSIX::_exit(255) };
+	exit 255;
 }
-sub wait { }
-sub ok { }
+sub pid { $_[0]->{pid}; }
+
+sub opened { !!$_[0]->{fhs} }
+sub close {
+	my $self = shift;
+	my $class = ref $self;
+	$class = defined $class ? "$class: " : "";
+	return 1 if !$self->opened;
+	my $aok = 1;
+	my @fhs = @{$self->{fhs}};
+	foreach (reverse 0 .. $#fhs) {
+		if ($fhs[$_]->[0]->opened) {
+			unless (close $fhs[$_]->[0]) {
+				my $fd = fileno($fhs[$_]->[0]);
+				Carp::carp "${class}close($fd): $!";
+				$aok = 0;
+			} else {
+				splice @fhs, $_, 1, ();
+			}
+		}
+	}
+	unless (@fhs) {
+		delete $self->{fhs};
+	} else {
+		@{$self->{fhs}} = @fhs;
+	}
+	return $aok;
+}
+
+sub exited { defined $_[0]->{err} }
+sub wait {
+	my $self = shift;
+	return $self->{err} if $self->exited;
+	my $class = ref $self;
+	$class = defined $class ? "$class: " : "";
+	my $pid = $self->{pid};
+	my $kid = waitpid $pid, 0;
+	if ($kid == -1) {
+		Carp::carp("${class}waitpid($pid): $!");
+		return -1;
+	} else {
+		return $self->seterror($?);
+	}
+}
+sub seterror {
+	my $self = shift;
+	my $stat = @_ ? shift : $?;
+	$self->{err} = $stat;
+	return $self->{err};
+}
+sub ok {
+	my $self = shift;
+	my $class = ref $self;
+	$class = defined $class ? "$class: " : "";
+
+	defined (my $stat = $self->{err}) or
+		croak "${class}ok: called too early";
+	return if $self->{err} == 0;
+
+	my $status = $self->{err} >> 8;
+	my $signal = $self->{err} & 127;
+	my $coredump = $self->{err} & 128;
+
+	my $sig_name;
+	if ($signal) {
+		my @sig_name = split / /, $Config{'sig_name'};
+		my $sig_name = $sig_name[$signal];
+	}
+
+	croak "pid=$self->{pid} died of code $status"
+		. ( $signal == 0 ? "" : $sig_name ?
+			", SIG$sig_name" : ", signal $signal" )
+		. ( "(core dumped)" x!! $coredump );
+}
 
 1; # make require happy
