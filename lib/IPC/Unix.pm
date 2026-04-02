@@ -49,11 +49,34 @@ use Symbol ();
 
 use Data::Dumper;
 use File::Basename;
+use File::Spec;
 
 sub quote
 {
-	Data::Dumper->new(\@_)->Useqq(1)
+	my @fmt = map { /^"/ or $_ = "\"$_\""; $_ }
+		Data::Dumper->new(\@_)->Useqq(1)
 		->Indent(0)->Terse(1)->Dump();
+	wantarray ? @fmt : $fmt[0];
+}
+
+our $TRACE;
+sub DEBUG
+{
+	local $" = " ";
+	my ($subr, $file, $line) = caller;
+	my $name = File::Spec->abs2rel($file, ".");
+	$name = $file if $name =~ m!^../!;
+	my $fmt = sprintf "%s:%s:%03d %s", $name, $subr, $line, "@_";
+	chomp $fmt;  print STDERR "$fmt\n";
+}
+
+sub POINT
+{
+	if (defined pos($_[0])) {
+		return quote(substr($_[0], 0, pos($_[0])))
+		. "|" . quote(substr($_[0], pos($_[0])));
+	}
+	&quote;
 }
 
 sub new {
@@ -133,15 +156,19 @@ sub unsetenv {
 sub dup {
 	my $self = $_[0];
 	my $class = ref $self;
-	$class = defined $class ? $class . ": " : "";
+	$class = defined $class ? "$class: " : "";
 	my $pkg = caller;
+	DEBUG ("dup(@{[@_-1]}+1 elt): called from $pkg") if $TRACE;
 	for (my $o = 1; $o < @_; ++$o) {
+		DEBUG ("BEGIN\n") if $TRACE;
 		my ($adv, $fh0, $fh1, $mode);
 
 		if (ref $_[$o] eq 'GLOB') {
+			DEBUG ("  toke [$o]=$_[$o] src @{[$$fh0]}") if $TRACE;
 			$fh0 = $_[$o++];
 			$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB reference";
 		} elsif (ref \$_[$o] eq 'GLOB') {
+			DEBUG ("  toke [$o]=\${ @{[\$_[$o]]} } src $_[$o]") if $TRACE;
 			$fh0 = \$_[$o++];
 			$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB scalar";
 		} else {
@@ -160,6 +187,7 @@ sub dup {
 			else {
 				croak "${class}dup: index $o: expecting source file";
 			}
+			DEBUG ("  toke [$o]=@{[POINT($_[$o])]} src @{[$$fh0]}") if $TRACE;
 			if ($_[$o] =~ /\G\z/gc) {
 				++$o;
 				$o < @_ or croak "${class}dup: index $o: unexpected end after file descriptor";
@@ -170,8 +198,10 @@ sub dup {
 			croak "${class}dup: index $o: cannot find a valid file mode in: $_[$o]";
 		} else {
 			$mode = $1;
+			DEBUG ("  toke [$o]=@{[POINT($_[$o])]} mode=@{[quote($mode)]}") if $TRACE;
 			if ($mode eq '<&-' || $mode eq '>&-') {
 				push @{$self->{dup}}, [ $fh0, $mode ];
+				DEBUG ("    CLOSE $$fh0 $mode") if $TRACE;
 				next;
 			} elsif ($_[$o] =~ /\G\z/gc) {
 				++$o;
@@ -183,18 +213,23 @@ sub dup {
 		# Handle < or >
 		if ($mode =~ /\A\+?[<>]\z/) {
 			if (defined $_[$o]) {
+				DEBUG ("  toke [$o]=@{[$adv ? quote($_[$o]) : POINT($_[$o])]}") if $TRACE;
 				my $filename = $adv ? $_[$o] : substr($_[$o], pos($_[$o]));
 				push @{$self->{dup}}, [ $fh0, $mode, $filename ];
+				DEBUG ("    OPEN $$fh0 $mode @{[quote($filename)]}") if $TRACE;
 			} else {
 				$mode =~ y/+//d;
 				if ($mode eq '<') {
 					pipe $fh1, $_[$o] or croak "${class}dup: index $o: pipe `<': $!";
-					$_[$o]->autoflush();
+					DEBUG ("  PIPE <($fh1) >([$o]=$_[$o])") if $TRACE;
+					$fh1->autoflush(1);
 				} else {
 					pipe $_[$o], $fh1 or croak "${class}dup: index $o: pipe `>': $!";
-					$fh1->autoflush();
+					DEBUG ("  PIPE <([$o]=$_[$o]) >($fh1)") if $TRACE;
+					$_[$o]->autoflush(1);
 				}
 				push @{$self->{dup}}, [ $fh0, "$mode&", $fh1 ];
+				DEBUG ("    DUP2 $$fh0 $mode \${ $fh1 }") if $TRACE;
 				push @{$self->{fhs}}, [ $fh1, $_[$o] ];
 			}
 			next;
@@ -202,8 +237,10 @@ sub dup {
 
 		if (ref $_[$o] eq 'GLOB') {
 			$fh1 = $_[$o];
+			DEBUG ("  toke [$o]=$_[$o] dst $$fh1") if $TRACE;
 		} elsif (ref \$_[$o] eq 'GLOB') {
 			$fh1 = \$_[$o];
+			DEBUG ("  toke [$o]=\${ @{[\$_[$o]]} } dst $$fh1") if $TRACE;
 		} elsif (defined $_[$o]) {
 			if ($_[$o] =~ /\G([0-9]+)/gc) {
 				$1 > 2 and croak "${class}dup: index $o: don't know how to map file descriptor: $1";
@@ -213,14 +250,17 @@ sub dup {
 			} else {
 				croak "${class}dup: index $o: unexpected end while expecting destination file";
 			}
+			DEBUG ("  toke [$o]=@{[POINT($_[$o])]} dst $$fh1") if $TRACE;
 		}
 
 		if (defined $fh1) {
 			push @{$self->{dup}}, [ $fh0, $mode, $fh1 ];
+			DEBUG ("    DUP2 $$fh0 $mode $$fh1") if $TRACE;
 			next;
 		} else {
 			# Weird way to write ">&-" or "<&-" :/
 			push @{$self->{dup}}, [ $fh0, "$mode-" ];
+			DEBUG ("    CLOSE $$fh0 $mode-") if $TRACE;
 		}
 	}
 	$self;
@@ -241,7 +281,7 @@ sub spawn {
 	defined (my $kid = fork) or croak "${class}spawn: fork: $!";
 	if ($kid) {  # parent process
 		close $stat_w;
-		close $_->[1] foreach @fhs;
+		close $_->[0] foreach @fhs;
 
 		my $mesg = do { local $/; <$stat_r> };
 		if (defined $mesg && do { chomp $mesg; length $mesg }) {
@@ -254,7 +294,7 @@ sub spawn {
 
 	# child process (will NEVER return)
 	close $stat_r;
-	close $_->[0] foreach @fhs;
+	close $_->[1] foreach @fhs;
 
 	eval {
 		# Make $stat_w close on exec.  (It probably
@@ -283,6 +323,7 @@ sub spawn {
 					my $fd0 = fileno($fh0);
 					my $fd1 = ref $fh1 ? fileno($fh1)
 						: quote($fh1);
+					defined $fd1 or $fd1 = "$fh1";
 					die "open $fd0$mode$fd1: $!\n";
 				}
 			}
@@ -326,6 +367,7 @@ sub close {
 		if ($fhs[$_]->[0]->opened) {
 			unless (close $fhs[$_]->[0]) {
 				my $fd = fileno($fhs[$_]->[0]);
+				defined $fd or $fd = "$fhs[$_]->[0]";
 				Carp::carp "${class}close($fd): $!";
 				$aok = 0;
 			} else {
@@ -381,7 +423,10 @@ sub ok {
 		my $sig_name = $sig_name[$signal];
 	}
 
-	croak "pid=$self->{pid} died of code $status"
+	croak "{" . quote($self->{bin}) . "} "
+		# XXX: May be very long???
+		. quote($self->{cmd})
+		. " [pid=$self->{pid}] died of code $status"
 		. ( $signal == 0 ? "" : $sig_name ?
 			", SIG$sig_name" : ", signal $signal" )
 		. ( "(core dumped)" x!! $coredump );
