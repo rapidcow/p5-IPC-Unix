@@ -153,7 +153,7 @@ sub dup {
 			}
 		}
 
-		unless ($_[$o] =~ /(<&-?|>&-?|<|>)/gc) {
+		unless ($_[$o] =~ /([<>]&-?|\+?[<>])/gc) {
 			croak "dup: index $o: cannot find a valid file mode in: $_[$o]";
 		} else {
 			$mode = $1;
@@ -167,14 +167,19 @@ sub dup {
 		}
 
 		# Handle < or >
-		if ($mode eq '<' || $mode eq '>') {
-			if ($mode eq '<') {
-				pipe $fh1, $_[$o] or croak "dup: index $o: pipe `<': $!";
+		if ($mode =~ /\A\+?[<>]\z/) {
+			if (defined $_[$o]) {
+				push @{$self->{fds}}, [ $fh0, $mode, substr $_[$o], pos $_[$o] ];
 			} else {
-				pipe $_[$o], $fh1 or croak "dup: index $o: pipe `>': $!";
+				$mode =~ y/+//d;
+				if ($mode eq '<') {
+					pipe $fh1, $_[$o] or croak "dup: index $o: pipe `<': $!";
+				} else {
+					pipe $_[$o], $fh1 or croak "dup: index $o: pipe `>': $!";
+				}
+				push @{$self->{dup}}, [ $fh0, "$mode&", $fh1 ];
+				push @{$self->{fds}}, $_[$o];
 			}
-			push @{$self->{dup}}, [ $fh0, $mode, $fh1 ];
-			push @{$self->{fds}}, $_[$o];
 			next;
 		}
 
