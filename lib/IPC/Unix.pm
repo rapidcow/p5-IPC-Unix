@@ -123,7 +123,7 @@ sub dup {
 	my $self = $_[0];
 	my $pkg = caller;
 	for (my $o = 1; $o < @_; ++$o) {
-		my ($fh0, $fh1, $mode);
+		my ($adv, $fh0, $fh1, $mode);
 
 		if (ref $_[$o] eq 'GLOB') {
 			$fh0 = $_[$o++];
@@ -163,13 +163,15 @@ sub dup {
 			} elsif ($_[$o] =~ /\G\z/gc) {
 				++$o;
 				$o < @_ or croak "dup: index $o: unexpected end after file mode";
+				$adv = 1;
 			}
-		}
+		} # else "$adv = 0" here.
 
 		# Handle < or >
 		if ($mode =~ /\A\+?[<>]\z/) {
 			if (defined $_[$o]) {
-				push @{$self->{fds}}, [ $fh0, $mode, substr $_[$o], pos $_[$o] ];
+				my $filename = $adv ? $_[$o] : substr($_[$o], pos($_[$o]));
+				push @{$self->{fds}}, [ $fh0, $mode, $filename ];
 			} else {
 				$mode =~ y/+//d;
 				if ($mode eq '<') {

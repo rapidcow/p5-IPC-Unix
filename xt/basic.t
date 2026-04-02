@@ -14,5 +14,9 @@ note explain ( IPC::Unix->new(qw(git name-rev
 note explain ( IPC::Unix->new(qw(git name-rev
 	--annotate-stdin))->dup("<", $fin)->dup(">", $fout)->dup("2+>/dev/null") );
 
+note explain ( IPC::Unix->new(qw(git name-rev
+	--annotate-stdin))->dup("<", $fin)->dup(">", $fout)->dup("2+>/dev/null")
+	->chdir("/path/to/.git")->chdir("annex") );
+
 ok 1;
 done_testing;
