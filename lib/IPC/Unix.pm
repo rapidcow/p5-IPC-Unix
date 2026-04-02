@@ -127,10 +127,10 @@ sub dup {
 
 		if (ref $_[$o] eq 'GLOB') {
 			$fh0 = $_[$o++];
-			$o < @$_ or croak "dup: index $o: unexpected end after GLOB reference";
+			$o < @_ or croak "dup: index $o: unexpected end after GLOB reference";
 		} elsif (ref \$_[$o] eq 'GLOB') {
 			$fh0 = \$_[$o++];
-			$o < @$_ or croak "dup: index $o: unexpected end after GLOB scalar";
+			$o < @_ or croak "dup: index $o: unexpected end after GLOB scalar";
 		} else {
 			pos($_[$o]) = 0;
 			if ($_[$o] =~ /\G([0-9]+)/gc) {
@@ -139,7 +139,7 @@ sub dup {
 			} elsif ($_[$o] =~ /\G([^<>]+)/gc) {
 				$fh0 = Symbol::qualify_to_ref($1, $pkg);
 				++$o;
-				$o < @$_ or croak "dup: index $o: unexpected end after file descriptor";
+				$o < @_ or croak "dup: index $o: unexpected end after file descriptor";
 			} elsif ($_[$o] =~ /^>/)
 				{ $fh0 = \*STDOUT; }
 			elsif ($_[$o] =~ /^</)
@@ -149,7 +149,7 @@ sub dup {
 			}
 			if ($_[$o] =~ /\G\z/gc) {
 				++$o;
-				$o < @$_ or croak "dup: index $o: unexpected end after file descriptor";
+				$o < @_ or croak "dup: index $o: unexpected end after file descriptor";
 			}
 		}
 
@@ -162,11 +162,9 @@ sub dup {
 				next;
 			} elsif ($_[$o] =~ /\G\z/gc) {
 				++$o;
-				$o < @$_ or croak "dup: index $o: unexpected end after file mode";
+				$o < @_ or croak "dup: index $o: unexpected end after file mode";
 			}
 		}
-
-		print STDERR "fh0=$fh0 mode=$mode\n";
 
 		# Handle < or >
 		if ($mode eq '<' || $mode eq '>') {
@@ -200,7 +198,7 @@ sub dup {
 			next;
 		} else {
 			# Weird way to write ">&-" or "<&-" :/
-			push @{$self->{clo}}, [ $fh0, "$mode-" ];
+			push @{$self->{dup}}, [ $fh0, "$mode-" ];
 		}
 	}
 	$self;
