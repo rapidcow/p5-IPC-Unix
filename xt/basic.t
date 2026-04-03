@@ -24,7 +24,7 @@ my $pid = $chld->spawn;
 $chld->wait();
 $chld->ok();
 
-$chld = IPC::Unix->new(qw(git mktree))->dup(*STDOUT, ">", my $fh, "<&-");
+$chld = IPC::Unix->new(qw(git mktree))->dup(*STDOUT, ">|", my $fh, "<&-");
 $chld->spawn;
 chomp (my $emptytree = <$fh>);
 $chld->wait();
@@ -37,7 +37,7 @@ $chld->spawn;
 $chld->wait();
 eval { $chld->ok(); }; diag "ok? $@";
 
-$chld = IPC::Unix->new(qw(git mktree))->dup("<&-", ">", my $fh);
+$chld = IPC::Unix->new(qw(git mktree))->dup("<&-", ">|", my $fh);
 $chld->spawn;
 chomp ($emptytree = <$fh>);
 $chld->wait();
