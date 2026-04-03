@@ -45,6 +45,7 @@ use Fcntl qw( F_GETFD F_SETFD FD_CLOEXEC );
 use IO::Handle;   # for IO methods (pre-v5.14)
 
 use Carp qw(croak);
+use Scalar::Util qw(refaddr);
 use Symbol ();
 
 use Data::Dumper;
@@ -62,12 +63,13 @@ sub quote
 our $TRACE;
 sub DEBUG
 {
-	local $" = " ";
+	my $fh = ref($_[0]) ? shift : \*STDERR;
+	local $" = '';
 	my (undef, $file, $line) = caller;
 	my $name = File::Spec->abs2rel($file, ".");
 	$name = $file if $name =~ m!^../!;
-	my $fmt = sprintf "%s:%03d %s", $name, $line, "@_";
-	chomp $fmt;  print STDERR "$fmt\n";
+	my $fmt = sprintf "%s:%03d [pid=%d] %s", $name, $line, $$, "@_";
+	chomp $fmt;  print $fh "$fmt\n";
 }
 
 sub POINT
@@ -77,6 +79,24 @@ sub POINT
 		. "|" . quote(substr($_[0], pos($_[0])));
 	}
 	&quote;
+}
+
+sub FILENO
+{
+	my $fh = shift;
+	# fileno returns "undef" for an unopened handle
+	# ... which shouldn't happen, but eh.
+	my $fileno = fileno($fh);
+	defined $fileno or $fileno = '-';
+	my $globs = do {  # describe the blob
+		# (probably shouldn't compare the filenos...)
+		my $addr = refaddr($fh);
+		if   ($addr == refaddr(\*STDIN)) { "STDIN"; }
+		elsif ($addr == refaddr(\*STDOUT)) { "STDOUT"; }
+		elsif ($addr == refaddr(\*STDERR)) { "STDERR"; }
+		else { "$fh" }  # GLOB(0x...)
+	};
+	"$fileno($globs)";
 }
 
 sub new {
@@ -164,11 +184,11 @@ sub dup {
 		my ($adv, $fh0, $fh1, $mode);
 
 		if (ref $_[$o] eq 'GLOB') {
-			DEBUG ("  toke [$o]=$_[$o] src @{[$$fh0]}") if $TRACE;
+			DEBUG ("  toke [$o]=$_[$o] src ", FILENO($_[$o])) if $TRACE;
 			$fh0 = $_[$o++];
 			$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB reference";
 		} elsif (ref \$_[$o] eq 'GLOB') {
-			DEBUG ("  toke [$o]=\${ @{[\$_[$o]]} } src $_[$o]") if $TRACE;
+			DEBUG ("  toke [$o]=\${", \$_[$o], "} src ", FILENO(\$_[$o])) if $TRACE;
 			$fh0 = \$_[$o++];
 			$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB scalar";
 		} else {
@@ -187,7 +207,7 @@ sub dup {
 			else {
 				croak "${class}dup: index $o: expecting source file";
 			}
-			DEBUG ("  toke [$o]=@{[POINT($_[$o])]} src @{[$$fh0]}") if $TRACE;
+			DEBUG ("  toke [$o]=", POINT($_[$o]), " src ", FILENO($fh0)) if $TRACE;
 			if ($_[$o] =~ /\G\z/gc) {
 				++$o;
 				$o < @_ or croak "${class}dup: index $o: unexpected end after file descriptor";
@@ -201,7 +221,7 @@ sub dup {
 			DEBUG ("  toke [$o]=@{[POINT($_[$o])]} mode=@{[quote($mode)]}") if $TRACE;
 			if ($mode eq '<&-' || $mode eq '>&-') {
 				push @{$self->{dup}}, [ $fh0, $mode ];
-				DEBUG ("    CLOSE $$fh0") if $TRACE;
+				DEBUG ("    CLOSE ", FILENO($fh0), " $mode-") if $TRACE;
 				next;
 			} elsif ($_[$o] =~ /\G\z/gc) {
 				++$o;
@@ -221,15 +241,15 @@ sub dup {
 				$mode =~ y/+//d;
 				if ($mode eq '<') {
 					pipe $fh1, $_[$o] or croak "${class}dup: index $o: pipe `<': $!";
-					DEBUG ("  PIPE <($fh1) >([$o]=$_[$o])") if $TRACE;
+					DEBUG ("  PIPE <(", FILENO($fh1), ") >([$o]=", FILENO($_[$o]), ")") if $TRACE;
 					$fh1->autoflush(1);
 				} else {
 					pipe $_[$o], $fh1 or croak "${class}dup: index $o: pipe `>': $!";
-					DEBUG ("  PIPE <([$o]=$_[$o]) >($fh1)") if $TRACE;
+					DEBUG ("  PIPE <([$o]=", FILENO($_[$o]), ") >(", FILENO($fh1), ")") if $TRACE;
 					$_[$o]->autoflush(1);
 				}
 				push @{$self->{dup}}, [ $fh0, "$mode&", $fh1 ];
-				DEBUG ("    DUP2 $$fh0 $mode \${ $fh1 }") if $TRACE;
+				DEBUG ("    DUP2 ", FILENO($fh0), " $mode& ", FILENO($fh1)) if $TRACE;
 				push @{$self->{fhs}}, [ $fh1, $_[$o] ];
 			}
 			next;
@@ -237,10 +257,10 @@ sub dup {
 
 		if (ref $_[$o] eq 'GLOB') {
 			$fh1 = $_[$o];
-			DEBUG ("  toke [$o]=$_[$o] dst $$fh1") if $TRACE;
+			DEBUG ("  toke [$o]=$_[$o] dst ", FILENO($fh1)) if $TRACE;
 		} elsif (ref \$_[$o] eq 'GLOB') {
 			$fh1 = \$_[$o];
-			DEBUG ("  toke [$o]=\${ @{[\$_[$o]]} } dst $$fh1") if $TRACE;
+			DEBUG ("  toke [$o]=\${", \$_[$o], "} dst ", FILENO($fh1)) if $TRACE;
 		} elsif (defined $_[$o]) {
 			if ($_[$o] =~ /\G([0-9]+)/gc) {
 				$1 > 2 and croak "${class}dup: index $o: don't know how to map file descriptor: $1";
@@ -250,17 +270,17 @@ sub dup {
 			} else {
 				croak "${class}dup: index $o: unexpected end while expecting destination file";
 			}
-			DEBUG ("  toke [$o]=@{[POINT($_[$o])]} dst $$fh1") if $TRACE;
+			DEBUG ("  toke [$o]=", POINT($_[$o]), " dst ", FILENO($fh1)) if $TRACE;
 		}
 
 		if (defined $fh1) {
 			push @{$self->{dup}}, [ $fh0, $mode, $fh1 ];
-			DEBUG ("    DUP2 $$fh0 $mode $$fh1") if $TRACE;
+			DEBUG ("    DUP2 ", FILENO($fh0), " $mode ", FILENO($fh1)) if $TRACE;
 			next;
 		} else {
 			# Weird way to write ">&-" or "<&-" :/
 			push @{$self->{dup}}, [ $fh0, "$mode-" ];
-			DEBUG ("    CLOSE $$fh0 $mode-") if $TRACE;
+			DEBUG ("    CLOSE ", FILENO($fh0), " $mode-") if $TRACE;
 		}
 	}
 	$self;
@@ -273,6 +293,10 @@ sub spawn {
 
 	# error communication
 	pipe my ($stat_r, $stat_w);
+	pipe my ($trac_r, $trac_w) if $TRACE;
+
+	$stat_w->autoflush(1);
+	$trac_w->autoflush(1) if $TRACE;
 
 	my @dir = $self->{dir} ? @{$self->{dir}} : ();
 	my @dup = $self->{dup} ? @{$self->{dup}} : ();
@@ -280,8 +304,13 @@ sub spawn {
 
 	defined (my $kid = fork) or croak "${class}spawn: fork: $!";
 	if ($kid) {  # parent process
+		DEBUG ("FORK => $kid") if $TRACE;
+
 		close $stat_w;
+		close $trac_w;
 		close $_->[0] foreach @fhs;
+
+		if ($TRACE) { while (<$trac_r>) { print STDERR $_; } }
 
 		my $mesg = do { local $/; <$stat_r> };
 		if (defined $mesg && do { chomp $mesg; length $mesg }) {
@@ -293,7 +322,9 @@ sub spawn {
 	}
 
 	# child process (will NEVER return)
+	DEBUG $trac_w, ("(hi Mom!)") if $TRACE;
 	close $stat_r;
+	close $trac_r;
 	close $_->[1] foreach @fhs;
 
 	eval {
@@ -302,42 +333,78 @@ sub spawn {
 		# FD_CLOEXEC automatically for fds above $^F.
 		# ... but it's good to be safe.)
 		my $flags = fcntl( $stat_w, F_GETFD, 0 )
-			or die "fcntl GETFD failed: $!\n";
+			or die "fcntl GETFD failed on status fd: $!\n";
 		fcntl( $stat_w, F_SETFD, $flags | FD_CLOEXEC )
-			or die "fcntl SETFD failed: $!\n";
+			or die "fcntl SETFD failed on status fd: $!\n";
 
+		if ($TRACE) {
+			my $flags = fcntl( $trac_w, F_GETFD, 0 )
+				or die "fcntl GETFD failed on trace fd: $!\n";
+			fcntl( $trac_w, F_SETFD, $flags | FD_CLOEXEC )
+				or die "fcntl SETFD failed on trace fd: $!\n";
+		}
+
+		DEBUG $trac_w, ("  * working directory") if $TRACE;
 		foreach (@dir) {
+			DEBUG $trac_w, ("    CHDIR @{[quote($_)]}") if $TRACE;
 			unless (CORE::chdir $_) {
 				my $dirs = quote($_);
 				die "chdir $dirs: $!\n";
 			}
 		}
 
+		DEBUG $trac_w, ("  * I/O redirection") if $TRACE;
 		foreach my $op (@dup) {
 			# mode >&- or <&-: close
 			if (@$op == 2) {
+				if ($TRACE) {
+					my $fd0 = FILENO($op->[0]);
+					DEBUG $trac_w, ("    CLOSE $fd0");
+				}
 				close $op->[0];
 			} else {
 				my ($fh0, $mode, $fh1) = @$op;
+				if ($TRACE) {
+					my $fd0 = FILENO($fh0);
+					my $fd1 = FILENO($fh1);
+					DEBUG $trac_w, ("    DUP2 $fd0 $mode $fd1");
+				}
 				unless (open $fh0, $mode, $fh1) {
-					my $fd0 = fileno($fh0);
-					my $fd1 = ref $fh1 ? fileno($fh1)
-						: quote($fh1);
-					defined $fd1 or $fd1 = "$fh1";
-					die "open $fd0$mode$fd1: $!\n";
+					my $fd0 = FILENO($fh0);
+					my $fd1 = FILENO($fh1);
+					die "open $fd0 $mode $fd1: $!\n";
 				}
 			}
 		}
 
+		DEBUG $trac_w, ("  * environment") if $TRACE;
 		%ENV = %{$self->{env}} if $self->{env};
+		DEBUG $trac_w, ("    ENV ", $self->{env} ? join " ", (
+			map { sprintf "%s=%s", quote($_, $ENV{$_}) }
+			keys %ENV
+		) : "inherited") if $TRACE;
 		if ($self->{setenv}) {
 			while (my ($K, $V) = %{$self->{setenv}}) {
 				if (defined $V) {
 					$ENV{$K} = $V;
+					DEBUG $trac_w, (
+						"    SETENV ", sprintf
+						("%s=%s", quote($K,$V))
+					) if $TRACE;
 				} else {
 					delete $ENV{$K};
+					DEBUG $trac_w, (
+						"    UNSETENV ",
+						quote($K)
+					) if $TRACE;
 				}
 			}
+		}
+		if ($TRACE) {
+			local $" = ", ";
+			my $bins = quote($self->{bin});
+			my $args = join ", ", quote(@{$self->{cmd}});
+			DEBUG $trac_w, ("  EXEC { $bins } [ $args ]");
 		}
 		exec { $self->{bin} } @{$self->{cmd}} or do {
 			my $bins = quote($self->{bin});
@@ -346,6 +413,7 @@ sub spawn {
 	};
 
 	# Something went wrong
+	close $trac_w;
 	print $stat_w $@;
 	close $stat_w;
 
