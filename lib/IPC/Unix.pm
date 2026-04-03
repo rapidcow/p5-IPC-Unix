@@ -389,10 +389,12 @@ sub spawn {
 
 		DEBUG $trac_w, ("  * environment") if $TRACE;
 		%ENV = %{$self->{env}} if $self->{env};
-		DEBUG $trac_w, ("    ENV ", $self->{env} ? join " ", (
-			map { sprintf "%s=%s", quote($_, $ENV{$_}) }
-			keys %ENV
-		) : "inherited") if $TRACE;
+		DEBUG $trac_w, (
+			"    ENV ",
+			($self->{env} ? "passed down" : "inherited"),
+			" (", 0 + keys %ENV, " variable",
+			"s" x (keys %ENV != 1), ")"
+		) if $TRACE;
 		if ($self->{setenv}) {
 			while (my ($K, $V) = %{$self->{setenv}}) {
 				if (defined $V) {
