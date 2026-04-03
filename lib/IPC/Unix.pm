@@ -435,7 +435,6 @@ sub spawn {
 			}
 		}
 		if ($TRACE) {
-			local $" = ", ";
 			my $bins = quote($self->{bin});
 			my $args = join ", ", quote(@{$self->{cmd}});
 			DEBUG $trac_w, ("  EXEC { $bins } [ $args ]");
