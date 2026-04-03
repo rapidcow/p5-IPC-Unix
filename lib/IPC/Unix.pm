@@ -322,18 +322,6 @@ sub spawn {
 	my @dup = $self->{dup} ? @{$self->{dup}} : ();
 	my @fhs = $self->{fhs} ? @{$self->{fhs}} : ();
 
-	# Defer any closes to the very end; lest this might
-	# happen in spawn():
-	#    Filehandle STDIN reopened as STDOUT only for output
-	# ... and it'd be our fault, because well... while it's
-	# technically not wrong to do this, it's a bit "evil"
-	# to let it go unsupervised; and since the warning is
-	# in our court, I thought we should do something...
-	#
-	# You can uncomment this line to see what happens though...
-	# it'd be "fun", I guess ;P
-	###@dup = sort { @$b <=> @$a } @dup;
-
 	defined (my $kid = fork) or croak "${class}spawn: fork: $!";
 	if ($kid) {  # parent process
 		DEBUG ("FORK $kid") if $TRACE;
@@ -401,7 +389,17 @@ sub spawn {
 					my $fd1 = FILENO($fh1);
 					DEBUG $trac_w, ("    DUP2 $fd0 $mode $fd1");
 				}
-				unless (open $fh0, $mode, $fh1) {
+				unless (do {
+					# If $fh1 is a file path then Perl effectively
+					# opens the file, dups it to $fh0, then closes
+					# it.  This may be an issue if certain standard
+					# file descriptors are closed and get used by
+					# the OS; and Perl warns about this case if say
+					# STDIN suddenly start acting as a O_WRONLY file.
+					# This is a false positive and can be dismissed.
+					no warnings 'io' if $mode !~ /&/ && !ref $fh1;
+					open $fh0, $mode, $fh1;
+				}) {
 					my $fd0 = FILENO($fh0);
 					my $fd1 = FILENO($fh1);
 					die "open $fd0 $mode $fd1: $!\n";
