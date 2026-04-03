@@ -69,7 +69,7 @@ sub DEBUG
 	local $" = '';
 	my (undef, $file, $line) = caller;
 	my $name = File::Spec->abs2rel($file, ".");
-	$name = $file if $name =~ m!^../!;
+	$name = $file if $name =~ m!^(\.\./){3,}!n;
 	my $fmt = sprintf "%s:%03d [pid=%d] %s", $name, $line, $$, "@_";
 	chomp $fmt;  print $fh "$fmt\n";
 }
