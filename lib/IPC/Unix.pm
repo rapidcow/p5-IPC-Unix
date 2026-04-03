@@ -503,10 +503,11 @@ sub ok {
 		my $sig_name = $sig_name[$signal];
 	}
 
-	croak "{" . quote($self->{bin}) . "} "
+	croak "Process $self->{pid} "
+		. quote($self->{bin}) . " "
 		# XXX: May be very long???
 		. "[" . join(",", quote(@{$self->{cmd}})) . "]"
-		. " [pid=$self->{pid}] died of code $status"
+		. " died of code $status"
 		. ( $signal == 0 ? "" : $sig_name ?
 			", SIG$sig_name" : ", signal $signal" )
 		. ( "(core dumped)" x!! $coredump );
