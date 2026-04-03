@@ -17,7 +17,7 @@ IPC::Unix - POSIX bidi popen, re-written
 
    open my $null, '+>', '/dev/null';
    $child->dup( "<&-", "2>&1" );  # close or dup2
-   $child->dup( ">", my $pipe );     # pipe+dup2
+   $child->dup( ">|", my $pipe );    # pipe+dup2
    $child->dup( \*STDERR, ">&", $null );  # dup2
    $child->undup();    # restore all FDs
 
@@ -365,6 +365,7 @@ sub spawn {
 
 		my $mesg = do { local $/; <$stat_r> };
 		if (defined $mesg && do { chomp $mesg; length $mesg }) {
+			eval { $self->undup() };
 			croak "${class}spawn: $mesg";
 		}
 		close $stat_r;
