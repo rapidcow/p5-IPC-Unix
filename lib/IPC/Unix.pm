@@ -248,29 +248,32 @@ sub dup {
 		# pipe and dup
 		if ($mode eq '<|' || $mode eq '>|') {
 			$mode =~ y/|//d;
-			my $chld;
+			my $pepe;
 			if (defined $_[$o] and !ref $_[$o]) {
 				my $name = $adv ? $_[$o] : substr($_[$o], pos($_[$o]));
 				length $name or croak "${class}dup: index $o: empty symbol name";
-				$chld = \Symbol::qualify_to_ref($name, $pkg);
+				$pepe = Symbol::qualify_to_ref($name, $pkg);
 				DEBUG ("  toke [$o]=", $adv ? quote($_[$o]) : POINT($_[$o]),
-					" PIPE $$$chld=", FILENO($$chld)) if $TRACE;
+					" PIPE $$pepe=", FILENO($pepe)) if $TRACE;
 			} else {
-				$chld = \$_[$o];
 				DEBUG ("  toke [$o]=", POINT($_[$o]), " PIPE self") if $TRACE;
 			}
 			if ($mode eq '<') {
-				pipe $fh1, $$chld or croak "${class}dup: index $o: pipe `$mode': $!";
-				DEBUG ("  PIPE <(", FILENO($fh1), ") >([$o]=", FILENO($$chld), ")") if $TRACE;
+				$pepe ? pipe $fh1, $pepe : pipe $fh1, $_[$o]
+					or croak "${class}dup: index $o: pipe `$mode': $!";
+				DEBUG ("  PIPE <(", FILENO($fh1), ") >([$o]=",
+					FILENO($pepe || $_[$o]), ")") if $TRACE;
 				$fh1->autoflush(1);
 			} else {
-				pipe $$chld, $fh1 or croak "${class}dup: index $o: pipe `$mode': $!";
-				DEBUG ("  PIPE <([$o]=", FILENO($$chld), ") >(", FILENO($fh1), ")") if $TRACE;
-				$$chld->autoflush(1);
+				$pepe ? pipe $pepe, $fh1 : pipe $_[$o], $fh1
+					or croak "${class}dup: index $o: pipe `$mode': $!";
+				DEBUG ("  PIPE <([$o]=", FILENO($pepe || $_[$o]),
+					") >(", FILENO($fh1), ")") if $TRACE;
+				($pepe || $_[$o])->autoflush(1);
 			}
 			push @{$self->{dup}}, [ $fh0, "$mode&", $fh1 ];
 			DEBUG ("    DUP2 ", FILENO($fh0), " $mode& ", FILENO($fh1)) if $TRACE;
-			push @{$self->{fhs}}, [ $fh1, $$chld ];
+			push @{$self->{fhs}}, [ $fh1, $pepe || $_[$o] ];
 			next;
 		}
 
