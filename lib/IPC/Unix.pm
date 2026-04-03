@@ -18,6 +18,7 @@ IPC::Unix - POSIX bidi popen, re-written
    $child->dup( "<&-", "2>&1" );  # close or dup2
    $child->dup( ">", my $pipe );     # pipe+dup2
    $child->dup( \*STDERR, ">&", $null );  # dup2
+   $child->undup();    # restore all FDs
 
    $child->env( %ENV );
    $child->setenv( TERM => 'dumb' );
@@ -174,8 +175,16 @@ sub unsetenv {
 	$self->setenv(map { $_ => undef } @_);
 }
 
+sub undup {
+	my ($self) = @_;
+	my @fhs = $self->{fhs} ? @{$self->{fhs}} : ();
+	foreach (@fhs) { close $_ for @$_; }
+	delete $self->{dup};
+	delete $self->{fhs};
+	$self;
+}
 sub dup {
-	my $self = $_[0];
+	my ($self) = @_;
 	my $class = ref $self;
 	$class = defined $class ? "$class: " : "";
 	my $pkg = caller;
