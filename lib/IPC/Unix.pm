@@ -84,14 +84,15 @@ sub POINT
 sub FILENO
 {
 	my $fh = shift;
+	my $addr = refaddr($fh);
+	# Case of a plain string... just quote
+	return quote($fh) unless defined $addr;
 	# fileno returns "undef" for an unopened handle
 	# ... which shouldn't happen, but eh.
 	my $fileno = fileno($fh);
-	defined $fileno or $fileno = '-';
+	defined $fileno or $fileno = '-' if defined $addr;
 	my $globs = do {  # describe the blob
-		# (probably shouldn't compare the filenos...)
-		my $addr = refaddr($fh);
-		if   ($addr == refaddr(\*STDIN)) { "STDIN"; }
+		if  ($addr == refaddr(\*STDIN)) { "STDIN"; }
 		elsif ($addr == refaddr(\*STDOUT)) { "STDOUT"; }
 		elsif ($addr == refaddr(\*STDERR)) { "STDERR"; }
 		else { "$fh" }  # GLOB(0x...)
@@ -302,8 +303,8 @@ sub spawn {
 	}
 
 	# error communication
-	pipe my ($stat_r, $stat_w);
-	pipe my ($trac_r, $trac_w) if $TRACE;
+	pipe my ($stat_r, $stat_w) or croak "pipe status fd: $!";
+	pipe my ($trac_r, $trac_w) or croak "pipe trace fd: $!" if $TRACE;
 
 	$stat_w->autoflush(1);
 	$trac_w->autoflush(1) if $TRACE;
@@ -312,12 +313,24 @@ sub spawn {
 	my @dup = $self->{dup} ? @{$self->{dup}} : ();
 	my @fhs = $self->{fhs} ? @{$self->{fhs}} : ();
 
+	# Defer any closes to the very end; lest this might
+	# happen in spawn():
+	#    Filehandle STDIN reopened as STDOUT only for output
+	# ... and it'd be our fault, because well... while it's
+	# technically not wrong to do this, it's a bit "evil"
+	# to let it go unsupervised; and since the warning is
+	# in our court, I thought we should do something...
+	#
+	# You can uncomment this line to see what happens though...
+	# it'd be "fun", I guess ;P
+	###@dup = sort { @$b <=> @$a } @dup;
+
 	defined (my $kid = fork) or croak "${class}spawn: fork: $!";
 	if ($kid) {  # parent process
 		DEBUG ("FORK $kid") if $TRACE;
 
 		close $stat_w;
-		close $trac_w;
+		close $trac_w if $TRACE;
 		close $_->[0] foreach @fhs;
 
 		if ($TRACE) { while (<$trac_r>) { print STDERR; } }
@@ -334,7 +347,7 @@ sub spawn {
 	# child process (will NEVER return)
 	DEBUG $trac_w, ("(hi Mom!)") if $TRACE;
 	close $stat_r;
-	close $trac_r;
+	close $trac_r if $TRACE;
 	close $_->[1] foreach @fhs;
 
 	eval {

@@ -21,7 +21,7 @@ my %WriteMakefileArgs = (
         #'Foo::Bar::Module' => '5.0401',
     },
     dist  => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
-    clean => { FILES => 'IPC-Unix-*' },
+    clean => { FILES => 'IPC-Unix-* xt/readit xt/writte' },
 );
 
 # Compatibility with old versions of ExtUtils::MakeMaker
@@ -47,7 +47,7 @@ WriteMakefile(%WriteMakefileArgs);
 sub MY::postamble {
 	<<\MAKE
 
-xt : all
+xt : all xt/readit xt/writte
 	prove -bv xt/*.t
 MAKE
 }
