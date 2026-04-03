@@ -52,7 +52,6 @@ use Symbol ();
 
 use Data::Dumper;
 use File::Basename;
-use File::Spec;
 
 sub quote
 {
@@ -68,8 +67,7 @@ sub DEBUG
 	my $fh = ref($_[0]) ? shift : \*STDERR;
 	local $" = '';
 	my (undef, $file, $line) = caller;
-	my $name = File::Spec->abs2rel($file);
-	my $fmt = sprintf "%s:%03d [pid=%d] %s", $name, $line, $$, "@_";
+	my $fmt = sprintf "%s:%03d [pid=%d] %s", $file, $line, $$, "@_";
 	chomp $fmt;  print $fh "$fmt\n";
 }
 
