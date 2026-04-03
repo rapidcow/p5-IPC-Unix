@@ -234,7 +234,7 @@ sub dup {
 		}
 
 		# longest substrings first!
-		unless ($_[$o] =~ /\G([<>]&-?|\+?>>|[<>]\||\+?[<>]|<>)/gc) {
+		unless ($_[$o] =~ /\G([<>]&-?|\+?>>|[<>]\||<>|\+?[<>])/gc) {
 			croak "${class}dup: index $o: cannot find a valid file mode in ", quote($_[$o]);
 		} else {
 			$mode = $1 eq '<>' ? '+<' : $1;
@@ -484,7 +484,7 @@ sub spawn {
 	};
 
 	# Something went wrong
-	close $trac_w;
+	close $trac_w if $TRACE;
 	print $stat_w $@;
 	close $stat_w;
 
