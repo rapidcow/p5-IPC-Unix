@@ -221,7 +221,7 @@ sub dup {
 			DEBUG ("  toke [$o]=@{[POINT($_[$o])]} mode=@{[quote($mode)]}") if $TRACE;
 			if ($mode eq '<&-' || $mode eq '>&-') {
 				push @{$self->{dup}}, [ $fh0, $mode ];
-				DEBUG ("    CLOSE ", FILENO($fh0), " $mode-") if $TRACE;
+				DEBUG ("    CLOSE ", FILENO($fh0), " $mode") if $TRACE;
 				next;
 			} elsif ($_[$o] =~ /\G\z/gc) {
 				++$o;
