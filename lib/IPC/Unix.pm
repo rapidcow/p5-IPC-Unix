@@ -418,7 +418,15 @@ sub spawn {
 					# the OS; and Perl warns about this case if say
 					# STDIN suddenly start acting as a O_WRONLY file.
 					# This is a false positive and can be dismissed.
-					if ($mode !~ /&/ && !ref $fh1) { no warnings 'io' }
+					#
+					# This apparently also happens with dupping a
+					# GLOB, where fcntl temporarily F_DUPFD_CLOEXECs
+					# to a free fd.  So much for false positives...
+					#
+					# (Gosh, just now I thought & was immune to this
+					# tmp-fd nightmare... so does this mean I have to
+					# ignore this warning in EVERY single case now?
+					no warnings 'io';    # D: ... fine then.
 					open $fh0, $mode, $fh1;
 				}) {
 					my $fd0 = FILENO($fh0);
