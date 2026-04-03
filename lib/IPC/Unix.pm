@@ -11,6 +11,7 @@ IPC::Unix - POSIX bidi popen, re-written
    $child->prog("git");
    $child->file("/usr/bin/git");
    $child->chdir( @dirs );
+   $child->unchdir();  # clear cd queue
 
    $child->new->set(qw( version ));
 
@@ -108,7 +109,8 @@ sub new {
 			bless {
 				bin => $class->{bin},
 				cmd => [ @{$class->{cmd}} ],
-				env => [ @{$class->{env}} ],
+				($class->{env} ? (env => { %{$class->{env}} }) : ()),
+				($class->{setenv} ? (setenv => { %{$class->{setenv}} }) : ()),
 			}, ref $class;
 		} else {
 			@_ or Carp::croak("${class}: new: no argument");
@@ -145,6 +147,11 @@ sub file {
 sub chdir {
 	my $self = shift;
 	push @{$self->{dir}}, @_;
+	$self;
+}
+sub unchdir {
+	my $self = shift;
+	delete $self->{dir};
 	$self;
 }
 
@@ -362,7 +369,7 @@ sub spawn {
 		}
 		close $stat_r;
 		$self->{pid} = $kid;
-		return $kid;
+		return $self;
 	}
 
 	# child process (will NEVER return)
@@ -448,7 +455,7 @@ sub spawn {
 			"s" x (keys %ENV != 1), ")"
 		) if $TRACE;
 		if ($self->{setenv}) {
-			while (my ($K, $V) = %{$self->{setenv}}) {
+			while (my ($K, $V) = each %{$self->{setenv}}) {
 				if (defined $V) {
 					$ENV{$K} = $V;
 					DEBUG $trac_w, (
@@ -491,8 +498,7 @@ sub close {
 	my $self = shift;
 	my $class = ref $self;
 	$class = defined $class ? "$class: " : "";
-	return 1 if !$self->opened;
-	my $aok = 1;
+	return $self if !$self->opened;
 	my @fhs = @{$self->{fhs}};
 	foreach (reverse 0 .. $#fhs) {
 		if ($fhs[$_]->[0]->opened) {
@@ -500,7 +506,6 @@ sub close {
 				my $fd = fileno($fhs[$_]->[0]);
 				defined $fd or $fd = "$fhs[$_]->[0]";
 				Carp::carp "${class}close($fd): $!";
-				$aok = 0;
 			} else {
 				splice @fhs, $_, 1, ();
 			}
@@ -511,7 +516,7 @@ sub close {
 	} else {
 		@{$self->{fhs}} = @fhs;
 	}
-	return $aok;
+	return $self;
 }
 
 sub exited { defined $_[0]->{err} }
@@ -524,16 +529,15 @@ sub wait {
 	my $kid = waitpid $pid, 0;
 	if ($kid == -1) {
 		Carp::carp("${class}waitpid($pid): $!");
-		return -1;
 	} else {
-		return $self->seterror($?);
+		$self->error($?);
 	}
+	return $self;
 }
-sub seterror {
+sub error {
 	my $self = shift;
-	my $stat = @_ ? shift : $?;
-	$self->{err} = $stat;
-	return $self->{err};
+	return $self->{err} if !@_;
+	$self->{err} = $_[0]; $self;
 }
 sub ok {
 	my $self = shift;
