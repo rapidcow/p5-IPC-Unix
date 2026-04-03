@@ -19,7 +19,7 @@ IPC::Unix - POSIX bidi popen, re-written
    $child->dup( "<&-", "2>&1" );  # close or dup2
    $child->dup( ">|", my $pipe );    # pipe+dup2
    $child->dup( \*STDERR, ">&", $null );  # dup2
-   $child->undup();    # restore all FDs
+   $child->undup();    # remove all redirections
 
    $child->env( %ENV );
    $child->setenv( TERM => 'dumb' );
@@ -341,6 +341,9 @@ sub spawn {
 		DEBUG ("spawn() called from $pkg ",
 			"in ", quote($file), " line $line");
 	}
+	if (defined $self->{pid}) {
+		croak "${class}spawn: already spawned process $self->{pid}";
+	}
 
 	# error communication
 	pipe my ($stat_r, $stat_w) or croak "pipe status fd: $!";
@@ -365,7 +368,7 @@ sub spawn {
 
 		my $mesg = do { local $/; <$stat_r> };
 		if (defined $mesg && do { chomp $mesg; length $mesg }) {
-			eval { $self->undup() };
+			close $_->[1] foreach @fhs;
 			croak "${class}spawn: $mesg";
 		}
 		close $stat_r;
