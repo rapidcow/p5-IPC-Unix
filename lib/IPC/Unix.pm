@@ -212,8 +212,7 @@ sub dup {
 				$fh0 = \(*STDIN, *STDOUT, *STDERR)[$1];
 			} elsif ($_[$o] =~ /\G([^<>]+)/gc) {
 				$fh0 = Symbol::qualify_to_ref($1, $pkg);
-				++$o;
-				$o < @_ or croak "${class}dup: index $o: unexpected end after file descriptor";
+				++$o < @_ or croak "${class}dup: index $o: unexpected end after file descriptor";
 			}
 			# > >& >&- +> +>> >| default to fd 1 (STDOUT)
 			elsif ($_[$o] =~ /^\+?>/)
@@ -226,8 +225,7 @@ sub dup {
 			}
 			DEBUG ("  toke [$o]=", POINT($_[$o]), " src ", FILENO($fh0)) if $TRACE;
 			if ($_[$o] =~ /\G\z/gc) {
-				++$o;
-				$o < @_ or croak "${class}dup: index $o: unexpected end after file descriptor";
+				++$o < @_ or croak "${class}dup: index $o: unexpected end after file descriptor";
 			}
 		}
 
@@ -242,8 +240,7 @@ sub dup {
 				DEBUG ("    CLOSE ", FILENO($fh0), " $mode") if $TRACE;
 				next;
 			} elsif ($_[$o] =~ /\G\z/gc) {
-				++$o;
-				$o < @_ or croak "${class}dup: index $o: unexpected end after file mode";
+				++$o < @_ or croak "${class}dup: index $o: unexpected end after file mode";
 				$adv = 1;
 			}
 		} # else "$adv = 0" here.
@@ -254,6 +251,7 @@ sub dup {
 			my $chld;
 			if (defined $_[$o] and !ref $_[$o]) {
 				my $name = $adv ? $_[$o] : substr($_[$o], pos($_[$o]));
+				length $name or croak "${class}dup: index $o: empty symbol name";
 				$chld = \Symbol::qualify_to_ref($name, $pkg);
 				DEBUG ("  toke [$o]=", $adv ? quote($_[$o]) : POINT($_[$o]),
 					" PIPE $$$chld=", FILENO($$chld)) if $TRACE;
@@ -285,6 +283,7 @@ sub dup {
 			}
 			DEBUG ("  toke [$o]=", $adv ? quote($_[$o]) : POINT($_[$o])) if $TRACE;
 			my $name = $adv ? $_[$o] : substr($_[$o], pos($_[$o]));
+			length $name or croak "${class}dup: index $o: empty file name";
 			push @{$self->{dup}}, [ $fh0, $mode, $name ];
 			DEBUG ("    OPEN ", FILENO($fh0), " $mode ", quote($name)) if $TRACE;
 			next;
@@ -302,7 +301,7 @@ sub dup {
 				$1 > 2 and croak "${class}dup: index $o: don't know how to map file descriptor: $1";
 				$fh1 = \(*STDIN, *STDOUT, *STDERR)[$1];
 			} elsif ($_[$o] =~ /\G(.+)/gc) {
-				Symbol::qualify_to_ref($1, $_);
+				$fh1 = Symbol::qualify_to_ref($1, $_);
 			} else {
 				croak "${class}dup: index $o: unexpected end while expecting destination file";
 			}
