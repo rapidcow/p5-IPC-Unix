@@ -397,7 +397,7 @@ sub spawn {
 					# the OS; and Perl warns about this case if say
 					# STDIN suddenly start acting as a O_WRONLY file.
 					# This is a false positive and can be dismissed.
-					no warnings 'io' if $mode !~ /&/ && !ref $fh1;
+					if ($mode !~ /&/ && !ref $fh1) { no warnings 'io' }
 					open $fh0, $mode, $fh1;
 				}) {
 					my $fd0 = FILENO($fh0);
