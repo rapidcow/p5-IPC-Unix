@@ -178,9 +178,13 @@ sub dup {
 	my $class = ref $self;
 	$class = defined $class ? "$class: " : "";
 	my $pkg = caller;
-	DEBUG ("dup(@{[@_-1]}+1 elt): called from $pkg") if $TRACE;
+	if ($TRACE) {
+		my (undef, $file, $line) = caller;
+		DEBUG ("dup(@{[@_-1]}+1 elt) called from $pkg ",
+			"in ", quote($file), " line $line");
+	}
 	for (my $o = 1; $o < @_; ++$o) {
-		DEBUG ("BEGIN\n") if $TRACE;
+		DEBUG ("BEGIN") if $TRACE;
 		my ($adv, $fh0, $fh1, $mode);
 
 		if (ref $_[$o] eq 'GLOB') {
@@ -291,6 +295,12 @@ sub spawn {
 	my $class = ref $self;
 	$class = defined $class ? "$class: " : "";
 
+	if ($TRACE) {
+		my ($pkg, $file, $line) = caller;
+		DEBUG ("spawn() called from $pkg ",
+			"in ", quote($file), " line $line");
+	}
+
 	# error communication
 	pipe my ($stat_r, $stat_w);
 	pipe my ($trac_r, $trac_w) if $TRACE;
@@ -304,13 +314,13 @@ sub spawn {
 
 	defined (my $kid = fork) or croak "${class}spawn: fork: $!";
 	if ($kid) {  # parent process
-		DEBUG ("FORK => $kid") if $TRACE;
+		DEBUG ("FORK $kid") if $TRACE;
 
 		close $stat_w;
 		close $trac_w;
 		close $_->[0] foreach @fhs;
 
-		if ($TRACE) { while (<$trac_r>) { print STDERR $_; } }
+		if ($TRACE) { while (<$trac_r>) { print STDERR; } }
 
 		my $mesg = do { local $/; <$stat_r> };
 		if (defined $mesg && do { chomp $mesg; length $mesg }) {
@@ -493,7 +503,7 @@ sub ok {
 
 	croak "{" . quote($self->{bin}) . "} "
 		# XXX: May be very long???
-		. quote($self->{cmd})
+		. "[" . join(",", quote(@{$self->{cmd}})) . "]"
 		. " [pid=$self->{pid}] died of code $status"
 		. ( $signal == 0 ? "" : $sig_name ?
 			", SIG$sig_name" : ", signal $signal" )
