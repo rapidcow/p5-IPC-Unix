@@ -10,12 +10,12 @@ note explain ( IPC::Unix->new(qw(git version))->dup("1>&2")->dup(\*STDIN, "<&", 
 
 open my $null, '+>', "/dev/null";
 note explain ( IPC::Unix->new(qw(git name-rev
-	--annotate-stdin))->dup("<", $fin)->dup(">", $fout)->dup("2>&", $null) );
+	--annotate-stdin))->dup("<|", $fin)->dup(">|", $fout)->dup("2>&", $null) );
 note explain ( IPC::Unix->new(qw(git name-rev
-	--annotate-stdin))->dup("<", $fin)->dup(">", $fout)->dup("2+>/dev/null") );
+	--annotate-stdin))->dup("<|", $fin)->dup(">|", $fout)->dup("2+>/dev/null") );
 
 note explain ( IPC::Unix->new(qw(git name-rev
-	--annotate-stdin))->dup("<", $fin)->dup(">", $fout)->dup("2+>/dev/null")
+	--annotate-stdin))->dup("<|", $fin)->dup(">|", $fout)->dup("2+>/dev/null")
 	->chdir("/path/to/.git")->chdir("annex") );
 
 $IPC::Unix::TRACE++;
