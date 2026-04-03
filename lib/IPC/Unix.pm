@@ -198,13 +198,13 @@ sub dup {
 		my ($adv, $fh0, $fh1, $mode);
 
 		if (ref $_[$o] eq 'GLOB') {
-			DEBUG ("  toke [$o]=$_[$o] src ", FILENO($_[$o])) if $TRACE;
-			$fh0 = $_[$o++];
-			$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB reference";
+			$fh0 = $_[$o];
+			DEBUG ("  toke [$o]=$_[$o] src $$fh0=", FILENO($_[$o])) if $TRACE;
+			++$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB reference";
 		} elsif (ref \$_[$o] eq 'GLOB') {
-			DEBUG ("  toke [$o]=\${", \$_[$o], "} src ", FILENO(\$_[$o])) if $TRACE;
-			$fh0 = \$_[$o++];
-			$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB scalar";
+			$fh0 = \$_[$o];
+			DEBUG ("  toke [$o]=\${", \$_[$o], "} src $$fh0=", FILENO(\$_[$o])) if $TRACE;
+			++$o < @_ or croak "${class}dup: index $o: unexpected end after GLOB scalar";
 		} else {
 			pos($_[$o]) = 0;
 			if ($_[$o] =~ /\G([0-9]+)/gc) {
@@ -214,9 +214,12 @@ sub dup {
 				$fh0 = Symbol::qualify_to_ref($1, $pkg);
 				++$o;
 				$o < @_ or croak "${class}dup: index $o: unexpected end after file descriptor";
-			} elsif ($_[$o] =~ /^>/)
+			}
+			# > >& >&- +> +>> >| default to fd 1 (STDOUT)
+			elsif ($_[$o] =~ /^\+?>/)
 				{ $fh0 = \*STDOUT; }
-			elsif ($_[$o] =~ /^</)
+			# < <& <&- +< (aka <>) <| default to fd 0 (STDIN)
+			elsif ($_[$o] =~ /^\+?</)
 				{ $fh0 = \*STDIN; }
 			else {
 				croak "${class}dup: index $o: expecting source file";
@@ -228,10 +231,11 @@ sub dup {
 			}
 		}
 
-		unless ($_[$o] =~ /([<>]&-?|\+?[<>])/gc) {
-			croak "${class}dup: index $o: cannot find a valid file mode in: $_[$o]";
+		# longest substrings first!
+		unless ($_[$o] =~ /\G([<>]&-?|\+?>>|[<>]\||\+?[<>]|<>)/gc) {
+			croak "${class}dup: index $o: cannot find a valid file mode in ", quote($_[$o]);
 		} else {
-			$mode = $1;
+			$mode = $1 eq '<>' ? '+<' : $1;
 			DEBUG ("  toke [$o]=@{[POINT($_[$o])]} mode=@{[quote($mode)]}") if $TRACE;
 			if ($mode eq '<&-' || $mode eq '>&-') {
 				push @{$self->{dup}}, [ $fh0, $mode ];
@@ -244,37 +248,55 @@ sub dup {
 			}
 		} # else "$adv = 0" here.
 
-		# Handle < or >
-		if ($mode =~ /\A\+?[<>]\z/) {
-			if (defined $_[$o]) {
-				DEBUG ("  toke [$o]=@{[$adv ? quote($_[$o]) : POINT($_[$o])]}") if $TRACE;
-				my $filename = $adv ? $_[$o] : substr($_[$o], pos($_[$o]));
-				push @{$self->{dup}}, [ $fh0, $mode, $filename ];
-				DEBUG ("    OPEN $$fh0 $mode @{[quote($filename)]}") if $TRACE;
+		# pipe and dup
+		if ($mode eq '<|' || $mode eq '>|') {
+			$mode =~ y/|//d;
+			my $chld;
+			if (defined $_[$o] and !ref $_[$o]) {
+				my $name = $adv ? $_[$o] : substr($_[$o], pos($_[$o]));
+				$chld = \Symbol::qualify_to_ref($name, $pkg);
+				DEBUG ("  toke [$o]=", $adv ? quote($_[$o]) : POINT($_[$o]),
+					" PIPE $$$chld=", FILENO($$chld)) if $TRACE;
 			} else {
-				$mode =~ y/+//d;
-				if ($mode eq '<') {
-					pipe $fh1, $_[$o] or croak "${class}dup: index $o: pipe `<': $!";
-					DEBUG ("  PIPE <(", FILENO($fh1), ") >([$o]=", FILENO($_[$o]), ")") if $TRACE;
-					$fh1->autoflush(1);
-				} else {
-					pipe $_[$o], $fh1 or croak "${class}dup: index $o: pipe `>': $!";
-					DEBUG ("  PIPE <([$o]=", FILENO($_[$o]), ") >(", FILENO($fh1), ")") if $TRACE;
-					$_[$o]->autoflush(1);
-				}
-				push @{$self->{dup}}, [ $fh0, "$mode&", $fh1 ];
-				DEBUG ("    DUP2 ", FILENO($fh0), " $mode& ", FILENO($fh1)) if $TRACE;
-				push @{$self->{fhs}}, [ $fh1, $_[$o] ];
+				$chld = \$_[$o];
+				DEBUG ("  toke [$o]=", POINT($_[$o]), " PIPE self") if $TRACE;
 			}
+			if ($mode eq '<') {
+				pipe $fh1, $$chld or croak "${class}dup: index $o: pipe `$mode': $!";
+				DEBUG ("  PIPE <(", FILENO($fh1), ") >([$o]=", FILENO($$chld), ")") if $TRACE;
+				$fh1->autoflush(1);
+			} else {
+				pipe $$chld, $fh1 or croak "${class}dup: index $o: pipe `$mode': $!";
+				DEBUG ("  PIPE <([$o]=", FILENO($$chld), ") >(", FILENO($fh1), ")") if $TRACE;
+				$$chld->autoflush(1);
+			}
+			push @{$self->{dup}}, [ $fh0, "$mode&", $fh1 ];
+			DEBUG ("    DUP2 ", FILENO($fh0), " $mode& ", FILENO($fh1)) if $TRACE;
+			push @{$self->{fhs}}, [ $fh1, $$chld ];
 			next;
 		}
 
+		# open and dup
+		if ($mode !~ /&/) {
+			if (!defined $_[$o]) {
+				my $suggest = $mode =~ /</ ? '<' : '>';
+				croak "${class}dup: index $o: no filename "
+				. "(to pipe to a lexical file handle, use `$suggest|')";
+			}
+			DEBUG ("  toke [$o]=", $adv ? quote($_[$o]) : POINT($_[$o])) if $TRACE;
+			my $name = $adv ? $_[$o] : substr($_[$o], pos($_[$o]));
+			push @{$self->{dup}}, [ $fh0, $mode, $name ];
+			DEBUG ("    OPEN ", FILENO($fh0), " $mode ", quote($name)) if $TRACE;
+			next;
+		}
+
+		# Just dup
 		if (ref $_[$o] eq 'GLOB') {
 			$fh1 = $_[$o];
-			DEBUG ("  toke [$o]=$_[$o] dst ", FILENO($fh1)) if $TRACE;
+			DEBUG ("  toke [$o]=$_[$o] dst $$fh1=", FILENO($fh1)) if $TRACE;
 		} elsif (ref \$_[$o] eq 'GLOB') {
 			$fh1 = \$_[$o];
-			DEBUG ("  toke [$o]=\${", \$_[$o], "} dst ", FILENO($fh1)) if $TRACE;
+			DEBUG ("  toke [$o]=\${", \$_[$o], "} dst $$fh1=", FILENO($fh1)) if $TRACE;
 		} elsif (defined $_[$o]) {
 			if ($_[$o] =~ /\G([0-9]+)/gc) {
 				$1 > 2 and croak "${class}dup: index $o: don't know how to map file descriptor: $1";
@@ -284,7 +306,7 @@ sub dup {
 			} else {
 				croak "${class}dup: index $o: unexpected end while expecting destination file";
 			}
-			DEBUG ("  toke [$o]=", POINT($_[$o]), " dst ", FILENO($fh1)) if $TRACE;
+			DEBUG ("  toke [$o]=", POINT($_[$o]), " dst $$fh1=", FILENO($fh1)) if $TRACE;
 		}
 
 		if (defined $fh1) {
