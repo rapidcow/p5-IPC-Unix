@@ -15,6 +15,8 @@ int main(void)
 	written = write(STDOUT_FILENO, line, strlen(line));
 	capture_errno = errno;
 
+	(void) capture_errno;
+
 	if (written < 0) {
 		fprintf(stderr, "write error: %s\n", strerror(errno));
 	} else {
