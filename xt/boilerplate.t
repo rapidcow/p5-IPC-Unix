@@ -51,7 +51,7 @@ TODO: {
     "placeholder date/time"       => qr(Date/time)
   );
 
-  module_boilerplate_ok('lib/IPC/Unix.pm');
+  module_boilerplate_ok('lib/RdKw/IPC/Unix.pm');
 
 
 }

@@ -33,9 +33,9 @@ IPC::Unix - POSIX bidi popen, re-written
 
 =cut
 
-package IPC::Unix;
+package RdKw::IPC::Unix;
 
-our $VERSION = '0.0_001';
+our $VERSION = '0.00_00';
 $VERSION = eval $VERSION;
 
 use 5.006;

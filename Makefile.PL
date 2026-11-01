@@ -6,8 +6,8 @@ use ExtUtils::MakeMaker;
 my %WriteMakefileArgs = (
     NAME             => 'IPC::Unix',
     AUTHOR           => q{Ethan Meng <ethan@rapidcow.org>},
-    VERSION_FROM     => 'lib/IPC/Unix.pm',
-    ABSTRACT_FROM    => 'lib/IPC/Unix.pm',
+    VERSION_FROM     => 'lib/RdKw/IPC/Unix.pm',
+    ABSTRACT_FROM    => 'lib/RdKw/IPC/Unix.pm',
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.006',
     CONFIGURE_REQUIRES => {

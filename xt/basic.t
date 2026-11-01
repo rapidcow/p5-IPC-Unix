@@ -1,32 +1,33 @@
 #!perl
 
-use IPC::Unix;
 use Test::More;
+use RdKw::IPC::Unix;
 
-$IPC::Unix::TRACE++;
-note explain ( IPC::Unix->new(qw(git version)) );
-note explain ( IPC::Unix->new(qw(git version))->dup("1>&2") );
-note explain ( IPC::Unix->new(qw(git version))->dup("1>&2", "<&-") );
-note explain ( IPC::Unix->new(qw(git version))->dup("1>&2")->dup(\*STDIN, "<&", undef) );
+$RdKw::IPC::Unix::TRACE++;
+my $pkg = 'RdKw::IPC::Unix';
+note explain ( $pkg->new(qw(git version)) );
+note explain ( $pkg->new(qw(git version))->dup("1>&2") );
+note explain ( $pkg->new(qw(git version))->dup("1>&2", "<&-") );
+note explain ( $pkg->new(qw(git version))->dup("1>&2")->dup(\*STDIN, "<&", undef) );
 
 open my $null, '+>', "/dev/null";
 my ($fin, $fout);
-note explain ( IPC::Unix->new(qw(git name-rev
+note explain ( $pkg->new(qw(git name-rev
 	--annotate-stdin))->dup("<|", $fin)->dup(">|", $fout)->dup("2>&", $null) );
-note explain ( IPC::Unix->new(qw(git name-rev
+note explain ( $pkg->new(qw(git name-rev
 	--annotate-stdin))->dup("<|", $fin)->dup(">|", $fout)->dup("2+>/dev/null") );
 
-note explain ( IPC::Unix->new(qw(git name-rev
+note explain ( $pkg->new(qw(git name-rev
 	--annotate-stdin))->dup("<|", $fin)->dup(">|", $fout)->dup("2+>/dev/null")
 	->chdir("/path/to/.git")->chdir("annex") );
 
-$IPC::Unix::TRACE++;
-my $chld = IPC::Unix->new(qw(git version))->dup("1>&2");
+$RdKw::IPC::Unix::TRACE++;
+my $chld = $pkg->new(qw(git version))->dup("1>&2");
 my $pid = $chld->spawn;
 $chld->wait();
 $chld->ok();
 
-$chld = IPC::Unix->new(qw(git mktree))->dup(*STDOUT, ">|", my $fh, "<&-");
+$chld = $pkg->new(qw(git mktree))->dup(*STDOUT, ">|", my $fh, "<&-");
 $chld->spawn;
 chomp (my $emptytree = <$fh>);
 $chld->wait();
@@ -34,12 +35,12 @@ $chld->ok();
 
 note "Empty tree: ", $emptytree;
 
-$chld = IPC::Unix->new(qw(git diff --quiet), $emptytree, HEAD);
+$chld = $pkg->new(qw(git diff --quiet), $emptytree, HEAD);
 $chld->spawn;
 $chld->wait();
 eval { $chld->ok(); }; diag "ok? $@";
 
-$chld = IPC::Unix->new(qw(git mktree))->dup("<&-", ">|", my $fh);
+$chld = $pkg->new(qw(git mktree))->dup("<&-", ">|", my $fh);
 $chld->spawn;
 chomp ($emptytree = <$fh>);
 $chld->wait();

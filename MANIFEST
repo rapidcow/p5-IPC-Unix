@@ -1,5 +1,5 @@
 Changes
-lib/IPC/Unix.pm
+lib/RdKw/IPC/Unix.pm
 Makefile.PL
 MANIFEST			This list of files
 README

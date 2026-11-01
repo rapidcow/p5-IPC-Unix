@@ -1,16 +1,17 @@
 #!perl
 
-use IPC::Unix;
 use Test::More;
+use RdKw::IPC::Unix;
 
 use POSIX;
 no locale;
 setlocale(LC_ALL, "C");
 
-$IPC::Unix::TRACE++;
+$RdKw::IPC::Unix::TRACE++;
+my $pkg = 'RdKw::IPC::Unix';
 
 {
-	my $p = IPC::Unix->new( 'xt/readit' )->
+	my $p = $pkg->new( 'xt/readit' )->
 	dup( '0>&-', '1+>/dev/null', '0>&1' )->
 	dup( '2>|', my $pipe );
 	$p->spawn();
@@ -23,7 +24,7 @@ $IPC::Unix::TRACE++;
 }
 
 {
-	my $p = IPC::Unix->new( 'xt/readit' )->
+	my $p = $pkg->new( 'xt/readit' )->
 	dup( '0>&-', '1+>/dev/null' )->
 	dup( '2>|PIPE' );
 	$p->spawn();
