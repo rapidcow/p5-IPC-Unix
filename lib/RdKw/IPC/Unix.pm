@@ -4,7 +4,7 @@ IPC::Unix - POSIX bidi popen, re-written
 
 =head1 SYNOPSIS
 
-   my $child = IPC::Unix->new(
+   my $child = RdKw::IPC::Unix->new(
       "git", "mktree"
    );
    $child->set(qw( hash-object -t tree ));
